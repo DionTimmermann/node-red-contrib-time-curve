@@ -1,8 +1,7 @@
 {
-  "name": "node-red-contrib-spline-curve",
-  "version": "1.1.8",
-  "description": "create curves mapping values 0-1 to values 0-1 along a curve.",
-  "main": "index.js",
+  "name": "node-red-contrib-time-curve",
+  "version": "1.0.0",
+  "description": "create curves mapping timestamps to values between 0 and 1",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -11,22 +10,19 @@
     "spline",
     "curve"
   ],
-  "author": "Jason Cronquist",
+  "author": "Dion Timmermann <mail@dion-timmermann.de>",
   "license": "Apache-2.0",
   "node-red": {
     "nodes": {
-      "spline-curve": "spline-curve.js"
+      "time-curve": "time-curve.js"
     }
   },
-  "dependencies": {
-    "js-spline-curve": "1.0.0"
-  },
   "bugs": {
-        "url": "https://github.com/jcronq/node-red-contrib-spline-curve/issues"
+        "url": "https://github.com/DionTimmermann/node-red-contrib-time-curve/issues"
     },
-    "homepage": "https://github.com/jcronq/node-red-contrib-spline-curve",
+    "homepage": "https://github.com/DionTimmermann/node-red-contrib-time-curve",
     "repository": {
         "type": "git",
-        "url": "https://github.com/jcronq/node-red-contrib-spline-curve.git"
+        "url": "https://github.com/DionTimmermann/node-red-contrib-time-curve.git"
     }
 }

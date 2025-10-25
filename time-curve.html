@@ -1,0 +1,529 @@
+<script type="text/javascript">
+
+    const secondsPerDay = 24 * 60 * 60;
+
+    function Curve(config){
+        'use strict';
+
+        this.uid_seed       = 0;
+        this.points 		= [];
+        this.onAddPoint		= config.onAddPoint || function(index, point){};
+        this.onMovePoint    = config.onMovePoint || function(index, point){};
+        this.onRemovePoint  = config.onRemovePoint || function(index, point){};
+        this.recalculate    = false;
+
+        this.pointMap = {};
+
+        this.addPoint = function(point){
+            this.recalculate = true;
+            point.uid = this.uid_seed;
+            this.uid_seed += 1;
+            var insertIndex = 0;
+            if(this.points.length == 0 || point.x > this.points[this.points.length-1].x){
+                this.points.push(point);
+            }
+            else if(point.x < this.points[0].x){
+                this.points.splice(0,0,point);
+            }
+            else{
+                for (insertIndex=0; insertIndex<this.points.length -1; insertIndex++){
+                    if(this.points[insertIndex].x < point.x && this.points[insertIndex+1].x > point.x){
+                        this.points.splice(insertIndex+1, 0, point);
+                        break;
+                    }
+                }
+            }
+            point.index = insertIndex;
+            this.pointMap[point.uid] = point;
+            this.onAddPoint(insertIndex, point);
+        }
+
+        this.removePoint = function(pointIndex, notify=true){
+            this.recalculate = true;
+            const point = this.points[pointIndex];
+            const uid = point.uid;
+            this.points.splice(pointIndex, 1);
+            if(notify)
+                this.onRemovePoint(pointIndex, point, this.pointMap[point.uid]);
+            delete this.pointMap[uid];
+        }
+
+        this.movePoint = function(pointIndex, newValue){
+            this.recalculate = true;
+            this.points[pointIndex].x = newValue.x;
+            this.points[pointIndex].y = newValue.y;
+            newValue.index = pointIndex;
+            newValue.uid = this.points[pointIndex].uid;
+            this.onMovePoint(pointIndex, newValue);
+        }
+
+        this.getPositionOfPoint = function(uid){
+            for(var i=0; i < this.points.length; i++){
+                if(this.points[i].uid == uid)
+                    return i;
+            }
+            return -1;
+        };
+
+        // Compare 2 points
+        this.isEqual = function(p1,p2){
+            return(p1.x == p2.x && p1.y == p2.y);
+        }
+
+        this.getClosestPointToCoordinate = function(coordinate, threshold=0.1){
+            var pointerX = coordinate.x;
+            var pointerY = coordinate.y;
+
+            var dis = 10000;
+            var clickedPoint = -1;
+
+            for (var i=0;i<this.points.length;i++)
+            {
+                var x1 = pointerX-this.points[i].x;
+                var y1 = pointerY-this.points[i].y;
+
+                var tdis = Math.sqrt(x1*x1+y1*y1);
+                if (tdis < dis && tdis < threshold) {
+                    dis = tdis;
+                    clickedPoint = i;
+                }
+            }
+            return clickedPoint;
+        }
+
+        this.getValueAt = function(xpos) {
+            'use strict';
+
+            const points = this.points;
+
+            // Normalize xpos into [0, secondsPerDay)
+            xpos = ((xpos % secondsPerDay) + secondsPerDay) % secondsPerDay;
+
+            // Clone and extend the array cyclically
+            const extended = [
+                { x: points[points.length - 1].x - secondsPerDay, y: points[points.length - 1].y },
+                ...points,
+                { x: points[0].x + secondsPerDay, y: points[0].y }
+            ];
+
+            // Find segment [p0, p1] such that p0.x <= xpos < p1.x
+            let p0, p1;
+            for (let i = 0; i < extended.length - 1; i++) {
+                if (xpos >= extended[i].x && xpos < extended[i + 1].x) {
+                    p0 = extended[i];
+                    p1 = extended[i + 1];
+                    break;
+                }
+            }
+
+            // Handle edge case (xpos exactly at the end)
+            if (!p0) {
+                p0 = extended[extended.length - 2];
+                p1 = extended[extended.length - 1];
+            }
+
+            // Linear interpolation
+            const t = (xpos - p0.x) / (p1.x - p0.x);
+            return p0.y + t * (p1.y - p0.y);
+        }
+
+        if (config.points){
+            for (let i=0; i < config.points.length; i++ )
+                this.addPoint(config.points[i]);
+        }
+    }
+
+    function CurveView(canvas, container, curve){
+        'use strict';
+
+        this.currentPoint = -1;
+        this.canvas			= canvas;
+        this.canvas.width   = canvas.clientWidth;
+        this.canvas.height  = 300;
+        this.container      = container;
+        this.curve          = curve;
+        this.ctx 			= this.canvas.getContext('2d');
+        this.redraw			= 0;
+        this.onChange		= config.callback;
+        this.stepSize       = 1.0/this.canvas.width;
+        this.redrawInterval = 50;
+
+        this.point_selection_threshold = config.point_select_threshold || 0.1;
+
+        this.updateSize = function() {
+            this.canvas.width = this.container.clientWidth;
+        }
+
+        this.canvas.addEventListener('mousedown', (ev) => {
+            this.mouseDown(ev);
+        }, false);
+
+        this.canvas.addEventListener('contextmenu', (ev) => {
+            this.rightClick(ev);
+        }, false);
+
+        this.canvas.addEventListener('mouseup', (ev) => {
+            this.mouseUp(ev);
+        }, false);
+
+        this.canvas.addEventListener('mousemove', (ev) => {
+            this.mouseMove(ev);
+        }, false);
+
+        // Compare 2 points
+        this.isEqual = function(p1,p2)
+        {
+            'use strict';
+
+            if (p1.x == p2.x && p1.y == p2.y) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        this.render = function() {
+            'use strict';
+
+            const points = this.curve.points;
+            const ctx = this.ctx;
+            const width = this.canvas.width;
+            const height = this.canvas.height;
+            const stepSize = this.stepSize;
+
+            const moveTo = function(x,y){
+                ctx.moveTo(x*width,(1.0-y)*height);
+            };
+
+            const lineTo = function(x,y){
+                ctx.lineTo(x*width,(1.0-y)*height);
+            };
+
+            ctx.clearRect(0, 0, width, height);
+            this.drawGrid(ctx);
+            this.drawBorder(ctx);
+
+            if(points.length == 1){
+                ctx.beginPath();
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#000000';
+                moveTo(0, points[0].y );
+                lineTo(width, points[0].y);
+                ctx.stroke();
+            }
+            else{
+                this.ctx.beginPath();
+                moveTo(0.0, points[0]);
+                for(var i=0.0; i<=1.0 + stepSize; i+=stepSize) {
+                    lineTo(i, this.curve.getValueAt(i));
+                }
+                ctx.stroke();
+            }
+            this.drawPoints(lineTo, moveTo);
+        }
+
+        // The background border
+        this.drawBorder = function(ctx) {
+            'use strict';
+
+            const height = this.canvas.height;
+            const width = this.canvas.width;
+            ctx.beginPath();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#000000';
+            ctx.rect(0, 0, width, height);
+            ctx.stroke();
+        }
+
+        // The background grid
+        this.drawGrid = function(ctx) {
+            'use strict';
+
+            const width = this.canvas.width;
+            const height = this.canvas.height;
+
+            // horrizontal lines
+            ctx.beginPath();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#aaa';
+            let numSections = 4;
+            for (let i=1; i<numSections; i++) {
+                let yCoord = i * height/numSections;
+                ctx.moveTo(0, yCoord);
+                ctx.lineTo(width, yCoord);
+            }
+            ctx.stroke();
+
+            // thin vertical lines
+            ctx.beginPath();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#ddd';
+            numSections = 24;
+            for (let i=1; i<numSections; i++) {
+                if (i%6 == 0) {
+                    continue;
+                }
+                let xCoord = i * width/numSections;
+                ctx.moveTo(xCoord, 0); ctx.lineTo(xCoord, height);
+            }
+            ctx.stroke();
+
+            // thin vertical lines
+            ctx.beginPath();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#999';
+            numSections = 4;
+            for (let i=1; i<numSections; i++) {
+                let xCoord = i * width/numSections;
+                ctx.moveTo(xCoord, 0); ctx.lineTo(xCoord, height);
+            }
+            ctx.stroke();
+        }
+
+        // Draw the control points
+        this.drawPoints = function(lineTo, moveTo) {
+            'use strict';
+
+            const ctx = this.ctx;
+            const points = this.curve.points;
+            const width = this.canvas.width; const height = this.canvas.height;
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath();
+
+            for(var i=0;i<points.length;i++)
+            {
+                moveTo(points[i].x, points[i].y);
+                ctx.arc(points[i].x*width,height-(points[i].y*height), 3, 0 , 2 * Math.PI, false);
+            }
+            this.ctx.fill();
+        }
+
+        this.getCoordinateFromEvent = function(event){
+            if(!event) var event = window.event;
+            var canvasRect = this.canvas.getBoundingClientRect();
+            var pointerCoordinate = {
+                x: (event.pageX-canvasRect.left)/this.canvas.width,
+                y: 1.0-((event.pageY-canvasRect.top)/this.canvas.height)
+            }
+            return pointerCoordinate;
+        }
+
+        this.mouseDown = function(event) {
+            'use strict';
+            var pointerCoordinate = this.getCoordinateFromEvent(event);
+            var clickedPoint = this.curve.getClosestPointToCoordinate(pointerCoordinate, this.point_selection_threshold);
+
+            if (clickedPoint !== -1 ){
+                this.currentPoint = clickedPoint;
+            }
+            else{
+                this.currentPoint = this.curve.addPoint(pointerCoordinate);
+            }
+        }
+
+        this.rightClick = function(event) {
+            'use strict';
+            var pointerCoordinate = this.getCoordinateFromEvent(event);
+            var clickedPoint = this.curve.getClosestPointToCoordinate(pointerCoordinate, this.point_selection_threshold);
+
+            if (clickedPoint !== -1 ){
+                this.curve.removePoint(clickedPoint);
+            }
+        }
+
+        this.mouseUp = function(event) {
+            'use strict';
+            this.currentPoint = -1;
+        }
+
+        this.mouseMove = function(event) {
+            if (this.currentPoint == -1) return;
+            var canvasRect = this.canvas.getBoundingClientRect();
+            var newPosition = {
+                x: (event.pageX-canvasRect.left)/this.canvas.width,
+                y: 1.0-((event.pageY-canvasRect.top)/this.canvas.height)
+            };
+            this.movePoint(this.currentPoint, newPosition);
+        }
+
+        this.movePoint = function(index, newPosition){
+            'use strict';
+
+            var prevx,nextx;
+            const points = this.curve.points;
+            try {
+                if (index > 0.0)
+                    prevx = points[index-1].x;
+                else
+                    prevx = -0.000000001;
+                if (index==points.length-1)
+                    nextx = 1.000000001;
+                else
+                    nextx = points[index+1].x;
+
+                if(newPosition.x > prevx && newPosition.x < nextx) {
+                    this.curve.movePoint(index, newPosition);
+                }
+            } catch(e) {
+            }
+        }
+        setInterval(() => this.render(), this.redrawInterval);
+    }
+
+    RED.nodes.registerType('time-curve',{
+        category: 'function',
+        color: '#a6bbcf',
+        defaults: {
+            name: {value:""},
+            output_key: {value: ""},
+            input_key: {value: ""},
+            points: {
+                value: [
+                    {x: 24*60*60/2, y: 0.5}
+                ]
+            }
+        },
+        inputs:1,
+        outputs:1,
+        icon: "function.png",
+        label: function() {
+            return this.name||"time-curve";
+        },
+        oneditprepare: function() {
+
+            // Initialize HTML objects
+            const getHtmlCoordClass = function(axis){
+                return `coord-input-${axis}`;
+            }
+
+            const getHtmlCoordId = function(uid, axis){
+                return `coord-input-${axis}-${uid}`;
+            }
+
+            const getHtmlCoordInput = function(value, uid, axis){
+                const style     = `style="width: 66px"`;
+                const html_class= `class="${getHtmlCoordClass(axis)}"`;
+                const id            = `id="${getHtmlCoordId(uid, axis)}"`;
+                const type          = `type="number" min="0.0" max="1.0" step="0.001"`;
+                const html_value   = `value="${value.toFixed(3)}"`;
+                return `${axis.toUpperCase()}= <input ${id} ${html_class} ${style} ${type} ${html_value}>`;
+            }
+
+            const getHtmlForPoint = function(point){
+                line = `point ${point.uid}: `;
+                line = line += getHtmlCoordInput(point.x, point.uid, 'x');
+                line = line += ' ' + getHtmlCoordInput(point.y, point.uid, 'y');
+                return line;
+            }
+
+            const nodered_addItem = function(row, index, data){
+                $(row).html(getHtmlForPoint(data));
+                $(row).on('keydown', function(e){
+                    if(e.keyCode === 13){
+                        const newLocation = {
+                            x: parseFloat($(`#${getHtmlCoordId(data.uid, 'x')}`).val()),
+                            y: parseFloat($(`#${getHtmlCoordId(data.uid, 'y')}`).val())
+                        };
+                        const index = curve.getPositionOfPoint(data.uid);
+                        console.log(index, newLocation);
+                        curveView.movePoint(index, newLocation);
+                    }
+                });
+                $('#node-inputer-points-container').editableList('sort');
+            }
+
+            const nodered_sort = function(itemA, itemB){
+                return itemA.x - itemB.x;
+            }
+
+            const nodered_removeItem = function(point){
+                console.log('removed point: ', point);
+                const position = curve.getPositionOfPoint(point.uid);
+                if(position >= 0 ) curve.removePoint(position, false);
+            }
+
+            $('#node-input-points-container').editableList({
+                removable: true,
+                addItem: nodered_addItem,
+                removeItem: nodered_removeItem,
+                sort: nodered_sort
+            });
+
+            // Initialize JavaScript Objects
+            const curve_onAddPoint = function(index, point){
+                $('#node-input-points-container').editableList('addItem', point);
+            }
+
+            const curve_onMovePoint = function(index, point){
+                $(`#${getHtmlCoordId(point.uid,'x')}`).val(point.x.toFixed(3));
+                $(`#${getHtmlCoordId(point.uid,'y')}`).val(point.y.toFixed(3));
+            }
+
+            const curve_onRemovePoint = function(index, point, originalPoint){
+                $('#node-input-points-container').editableList('removeItem', originalPoint);
+            }
+
+            config = {
+                points: [],
+                onAddPoint: curve_onAddPoint,
+                onMovePoint: curve_onMovePoint,
+                onRemovePoint: curve_onRemovePoint
+            };
+
+            for(var i=0;i < this.points.length;i++){
+                const point_raw = this.points[i];
+                config.points.push({x: parseFloat(point_raw.x), y: parseFloat(point_raw.y)});
+            }
+
+            $("#node-input-input_key").typedInput({default:'msg',types:['msg']});
+            $("#node-input-output_key").typedInput({default:'msg',types:['msg']});
+            const canvas = document.getElementById('curve-canvas');
+            const container = canvas.parentElement;
+
+            console.log('setting canvas width to: '+ container.clientWidth);
+            canvas.width = container.clientWidth;
+            canvas.height = 300;
+
+            const curve = new Curve(config);
+            this.curveView = new CurveView(canvas, container, curve);
+        },
+        oneditresize: function(size) {
+            // called automatically when edit dialog is resized
+            this.curveView.updateSize();
+        },
+        oneditsave: function(){
+            var points = $('#node-input-points-container').editableList('items');
+            var node = this;
+            node.points = [];
+            points.each(function(i){
+                const x = parseFloat($(this).find('.coord-input-x').val());
+                const y = parseFloat($(this).find('.coord-input-y').val());
+                node.points.push({x: x, y: y});
+            });
+        }
+});
+</script>
+
+<script type="text/x-red" data-template-name="time-curve">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input id="node-input-name" style="width: 70%" type="text" placeholder="time-curve">
+    </div>
+    <div class="form-row">
+        <label for="node-input-input_key"><i class="fa fa-ellipsis-h"></i> Input</label>
+        <input id="node-input-input_key" style="width: 70%" type="text" placeholder="payload">
+    </div>
+    <div class="form-row">
+        <label for="node-input-output_key"><i class="fa fa-ellipsis-h"></i> Output</label>
+        <input id="node-input-output_key" style="width: 70%" type="text" placeholder="payload">
+    </div>
+    <canvas id="curve-canvas" style="display:block;"></canvas>
+    <div class="form-row node-input-points-container-row">
+        <ol id="node-input-points-container"></ol>
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="time-curve">
+    <p>A simple node</p>
+
+</script>

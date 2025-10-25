@@ -1,4 +1,4 @@
-Curve = require('js-spline-curve').Curve;
+Curve = require('./Curve').Curve;
 
 module.exports = function(RED) {
     function splineCurve(config) {
