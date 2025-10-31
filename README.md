@@ -3,7 +3,9 @@
 
 This node takes timestamp input and outputs a percentage (float in the range 0.0 to 100.0 inclusive) based on the time of day of the timestamp.
 
-This node functions as an analogoue time clock, e.g. a time-based dimmer. It is intentionally much simpler than TODO, since there are applications where more than a fade in and fade out per day is deried and where dependence on time of day is more important than dependence on the sun position. I specifically designed it to program the brightness of aquarium lamps. 
+This node functions as an analogoue time clock, e.g. a time-based dimmer. It can be seen as a dual component to [light scheduler](https://flows.nodered.org/node/node-red-contrib-light-scheduler) . I specifically designed it to program the brightness of aquarium lamps. 
+
+It is intentionally much simpler than other solutions like homeassistant's [adaptive lighting](https://github.com/basnijholt/adaptive-lighting), since there are applications where more than a fade in and fade out per day is deried and where dependence on time of day is more important than dependence on the sun position. 
 
 ![Alt text](https://raw.githubusercontent.com/jcronq/node-red-contrib-spline-curve/master/images/ColorTemperature_practical.PNG)
 
