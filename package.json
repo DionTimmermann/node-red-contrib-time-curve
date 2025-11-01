@@ -1,7 +1,7 @@
 {
   "name": "node-red-contrib-time-curve",
   "version": "1.0.0",
-  "description": "create curves mapping timestamps to values between 0 and 1",
+  "description": "Takes a timestamp input and outputs a value based on the time of day.",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

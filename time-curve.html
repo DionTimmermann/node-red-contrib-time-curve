@@ -11,14 +11,33 @@
         // Pad with leading zeros
         const pad = (n) => n.toString().padStart(2, '0');
 
-        return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+        let time = `${pad(hours)}:${pad(minutes)}`;
+        if (seconds !== 0) {
+            time += `:${pad(seconds)}`;
+        }
+
+        return time;
     }
 
     function timeToSeconds(timeStr) {
-        const parts = timeStr.split(':').map(Number);
-        const hours = parts[0] || 0;
-        const minutes = parts[1] || 0;
-        const seconds = parts[2] || 0;
+        if (typeof timeStr !== "string" || timeStr.trim() === "") {
+            throw new Error("Input must be a non-empty time string (hh:mm or hh:mm:ss).");
+        }
+
+        const parts = timeStr.trim().split(":");
+        if (parts.length < 2 || parts.length > 3) {
+            throw new Error("Invalid time format — expected hh:mm or hh:mm:ss.");
+        }
+
+        const [hStr, mStr, sStr] = parts;
+        const hours = Number(hStr);
+        const minutes = Number(mStr);
+        const seconds = sStr !== undefined ? Number(sStr) : 0;
+
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes) || (sStr !== undefined && !Number.isFinite(seconds))) {
+            throw new Error("Non-numeric value in time string.");
+        }
+
         return hours * 3600 + minutes * 60 + seconds;
     }
 
@@ -28,70 +47,110 @@
         return value;
     }
 
+    function parseFiniteNumber(value) {
+        const num = Number(value);
+        if (typeof value === "boolean" || value === null || value === "" || !Number.isFinite(num)) {
+            throw new Error(`Non-finite number.`);
+        }
+        return num;
+    }
+
     function parsePoints() {
         let points = $('#node-input-points-container').editableList('items');
         let list = [];
-        try {
-            points.each(function (i) {
-                const x = timeToSeconds($(this).find('.coord-input-x').val());
-                const y = parseFloat($(this).find('.coord-input-y').val());
-                list.push({x: x, y: y, index: i});
-            });
-        } catch (e) {
+        let errorState = false;
+        points.each(function (i) {
+            let x = undefined;
+            let y = undefined;
+            try {
+                x = timeToSeconds($(this).find('.coord-input-x').val());
+
+                // If we reach this point, there is no error.
+                $(this).find('.coord-input-x')
+                    .removeClass("input-error")
+                    .removeAttr("title");
+            } catch (e) {
+                $(this).find('.coord-input-x')
+                    .addClass("input-error")
+                    .attr("title", e.text);
+                errorState = true;
+            }
+            try {
+                y = parseFiniteNumber($(this).find('.coord-input-y').val());
+
+                // If we reach this point, there is no error.
+                $(this).find('.coord-input-y')
+                    .removeClass("input-error")
+                    .removeAttr("title");
+            } catch (e) {
+                $(this).find('.coord-input-y')
+                    .addClass("input-error")
+                    .attr("title", e.text);
+                errorState = true;
+            }
+
+            const uuid = $(this).find('.coord-input-uuid').val();
+            list.push({x: x, y: y, uuid: uuid});
+        });
+
+        if (errorState) {
             return [];
+        } else {
+            list.sort((a, b) => a.x - b.x);
+            return list;
         }
-        console.log(list);
-        return list;
     }
 
-    function Curve(config){
+    function isEmptyObject(obj) {
+        return obj && Object.keys(obj).length === 0 && obj.constructor === Object;
+    }
+
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    function Curve(){
         'use strict';
 
-        this.uid_seed       = 0;
         this.points 		= [];
-        this.onAddPoint		= config.onAddPoint || function(index, point){};
-        this.onMovePoint    = config.onMovePoint || function(index, point){};
-        this.onRemovePoint  = config.onRemovePoint || function(index, point){};
-        this.recalculate    = false;
+        this.onAddPoint		= function(index, point){};
+        this.onMovePoint    = function(index, point){};
+        this.onRemovePoint  = function(index, point){};
 
         this.addPoint = function(point){
-            this.recalculate = true;
-            point.uid = this.uid_seed;
-            this.uid_seed += 1;
+            if (point.uuid === undefined) {
+                point.uuid = generateUUID();
+            }
 
             let index = this.points.findIndex(p => p.x > point.x);
             if (index === -1) {
                 this.points.push(point);
-                index = 0;
             } else {
                 this.points.splice(index, 0, point);
             }
 
-            point.index = index;
-            this.onAddPoint(index, point);
+            this.onAddPoint(point);
+            return index;
         }
 
-        this.removePoint = function(pointIndex, notify=true){
-            this.recalculate = true;
-            const point = this.points[pointIndex];
-            this.points.splice(pointIndex, 1);
-            if (notify) {
-                this.onRemovePoint(pointIndex, point);
+        this.removePoint = function(point){
+            const index = this.points.findIndex(p => p.uuid === point.uuid);
+
+            if (index !== -1) {
+                this.points.splice(index, 1);
+                this.onRemovePoint(point);
             }
         }
 
         this.movePoint = function(pointIndex, newValue){
-            this.recalculate = true;
             this.points[pointIndex].x = newValue.x;
             this.points[pointIndex].y = newValue.y;
-            newValue.index = pointIndex;
-            newValue.uid = this.points[pointIndex].uid;
-            this.onMovePoint(pointIndex, newValue);
+            this.onMovePoint(this.points[pointIndex]);
         }
-
-        this.getPositionOfPoint = function(uid){
-            return this.points.map(p => p.uid).indexOf(uid);
-        };
 
         this.getExtendedPoints = function() {
             const points = this.points;
@@ -100,12 +159,6 @@
                 ...points,
                 { x: points[0].x + secondsPerDay, y: points[0].y }
             ];
-        }
-
-        if (config.points){
-            for (let i=0; i < config.points.length; i++ ) {
-                this.addPoint(config.points[i]);
-            }
         }
     }
 
@@ -119,7 +172,6 @@
         this.container      = container;
         this.curve          = curve;
         this.ctx 			= this.canvas.getContext('2d');
-        this.stepSize       = 1.0/this.canvas.width;
         this.redrawInterval = 50;
 
         this.point_selection_threshold = 60*15;
@@ -156,34 +208,57 @@
         this.render = function() {
             'use strict';
 
-            const extended = this.pixelPositions(this.curve.getExtendedPoints());
             const ctx = this.ctx;
             const width = this.canvas.width;
             const height = this.canvas.height;
 
             ctx.clearRect(0, 0, width, height);
-            this.drawGrid(ctx);
             this.drawBorder(ctx);
 
-            // Draw line
-            this.ctx.beginPath();
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = '#000';
-            ctx.moveTo(extended[0].px, extended[0].py);
-            for(let i=1; i<extended.length; i++) {
-                ctx.lineTo(extended[i].px, extended[i].py);
-            }
-            ctx.stroke();
+            if (this.curve.points.length === 0) {
 
-            // Draw points
-            ctx.fillStyle = '#f00';
-            ctx.beginPath();
-            for(let i=1; i<extended.length-1; i++) {
-                ctx.moveTo(extended[i].px, extended[i].py);
-                ctx.arc(extended[i].px, extended[i].py, 3, 0 , 2*Math.PI);
-            }
-            this.ctx.fill();
+                ctx.beginPath();
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#aaa';
 
+                ctx.moveTo(0, 0);
+                ctx.lineTo(width, height);
+                ctx.moveTo(width, 0);
+                ctx.lineTo(0, height);
+                ctx.stroke();
+
+                ctx.clearRect(width/2 - 75, height/2 - 25, 150, 50);
+
+                ctx.font = "14px Arial";
+                ctx.fillStyle = "#999";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("Invalid data table!", width/2, height/2 - 10);
+                ctx.fillText("Correct data in table below to enable GUI.", width/2, height/2 + 10);
+
+            } else {
+                const extended = this.pixelPositions(this.curve.getExtendedPoints());
+                this.drawGrid(ctx);
+
+                // Draw line
+                ctx.beginPath();
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#000';
+                ctx.moveTo(extended[0].px, extended[0].py);
+                for (let i = 1; i < extended.length; i++) {
+                    ctx.lineTo(extended[i].px, extended[i].py);
+                }
+                ctx.stroke();
+
+                // Draw points
+                ctx.fillStyle = '#f00';
+                ctx.beginPath();
+                for (let i = 1; i < extended.length - 1; i++) {
+                    ctx.moveTo(extended[i].px, extended[i].py);
+                    ctx.arc(extended[i].px, extended[i].py, 3, 0, 2 * Math.PI);
+                }
+                ctx.fill();
+            }
         }
 
         // The background border
@@ -269,6 +344,10 @@
 
         this.mouseDown = function(event) {
             'use strict';
+
+            if (this.curve.points.length === 0) {
+                return;
+            }
             const click = this.getCoordinateFromEvent(event);
 
             const points = this.pixelPositions(this.curve.points);
@@ -276,21 +355,20 @@
             const minDist = Math.min(...distances);
 
             if (minDist <= 10) {
-                console.log('clicked point '+ distances.indexOf(minDist));
                 this.currentPoint = distances.indexOf(minDist);
             } else {
                 const newPoint = {
                     x: Math.round(click.px / canvas.width * secondsPerDay),
                     y: Math.round((1 - (click.py / canvas.height)) * maxY)
                 }
-                this.currentPoint = this.curve.addPoint(newPoint);
-            }
 
+                this.currentPoint = this.curve.addPoint(newPoint); // addPoint returns the index.
+            }
         }
 
         this.rightClick = function(event) {
             'use strict';
-            if (this.curve.points.length === 1) {
+            if (this.curve.points.length <= 1) {
                 return;
             }
 
@@ -301,7 +379,9 @@
             const minDist = Math.min(...distances);
 
             if (minDist <= 10) {
-                this.curve.removePoint(distances.indexOf(minDist));
+                const point = this.curve.points[distances.indexOf(minDist)];
+                this.curve.removePoint(point);
+                event.preventDefault();
             }
         }
 
@@ -311,7 +391,9 @@
         }
 
         this.mouseMove = function(event) {
-            if (this.currentPoint == -1) return;
+            if (this.currentPoint <= -1) {
+                return;
+            }
             var canvasRect = this.canvas.getBoundingClientRect();
             var newPosition = {
                 x: Math.round(secondsPerDay * (event.pageX-canvasRect.left)/this.canvas.width / 60)  * 60,
@@ -327,12 +409,12 @@
             if (index === 0) {
                 point.x = clamp(point.x, 0, null);
             } else {
-                point.x = clamp(point.x, points[index-1].x + 1, null);
+                point.x = clamp(point.x, points[index - 1].x + 1, null);
             }
-            if (index === points.length-1) {
+            if (index === points.length - 1) {
                 point.x = clamp(point.x, null, secondsPerDay - 1);
             } else {
-                point.x = clamp(point.x, null, points[index+1].x - 1);
+                point.x = clamp(point.x, null, points[index + 1].x - 1);
             }
             this.curve.movePoint(index, point);
         }
@@ -345,11 +427,11 @@
         color: '#a6bbcf',
         defaults: {
             name: {value:""},
-            output_key: {value: ""},
-            input_key: {value: ""},
+            output_property: {value:"payload", required:true},
+            input_property:  {value:"payload", required:true},
             points: {
                 value: [
-                    {x: secondsPerDay/2, y: 50}
+                    {x: Math.round(secondsPerDay/2), y: 50}
                 ]
             }
         },
@@ -357,46 +439,67 @@
         outputs:1,
         icon: "time-curve.svg",
         label: function() {
-            return this.name||"time-curve";
+            return this.name || "time-curve";
         },
         oneditprepare: function() {
 
+            this.getPoint = function(uuid) {
+                return this.curveView.curve.points.find(p => p.uuid === uuid);
+            }
+
+            const canvas = document.getElementById('curve-canvas');
+            const container = canvas.parentElement;
+
+            const curve = new Curve();
+            this.curveView = new CurveView(canvas, container, curve);
+
+
+            const nodered_sort = (pointA, pointB) => {
+                try {
+                    pointA = this.getPoint(pointA.uuid);
+                    pointB = this.getPoint(pointB.uuid);
+                    if        (pointA.x < pointB.x) {
+                        return -1;
+                    } else if (pointA.x > pointB.x) {
+                        return +1;
+                    }
+                } catch (e) {}
+                return 0;
+            }
+
             const nodered_addItem = (row, index, point) => {
+
+                let timeStr = '';
+                if (isEmptyObject(point)) {
+                    point.uuid = generateUUID();
+                    point.x = NaN;
+                    point.y = '';
+                    this.curveView.curve.points = [];
+                } else {
+                    timeStr = secondsToTime(point.x);
+                }
+
                 $(row).html(`
-                    Time: <input id="coord-input-x-${point.uid}" class="coord-input-x" style="width: 75px; padding-right:2em;" type="time" step="1" value="${secondsToTime(point.x)}">
-                    Amplitude: <input id="coord-input-y-${point.uid}" class="coord-input-y" style="width: 60px" type="number" min="0" max="100" step="0.1" value="${point.y}">%
+                    Time: <input id="coord-input-x-${point.uuid}" class="coord-input-x" style="width: 75px; padding-right:2em;" type="time" step="1" value="${timeStr}">
+                    Amplitude: <input id="coord-input-y-${point.uuid}" class="coord-input-y" style="width: 60px" type="number" min="0" max="100" step="0.1" value="${point.y}">%
+                    <input type="hidden" class="coord-input-uuid" value="${point.uuid}">
                 `);
-                $(row).on('change', e => {
-                    // console.log('change');
-                    // if(e.keyCode === 13){
-                    //     const newLocation = {
-                    //         x: timeToSeconds($(`#coord-input-x-${point.uid}`).val()),
-                    //         y: parseFloat($(`#coord-input-y-${point.uid}`).val())
-                    //     };
-                    //     const index = curve.getPositionOfPoint(point.uid);
-                    //     this.curveView.movePoint(index, newLocation);
-                    // }
+                $(row).on('focusout', e => {
                     let points = parsePoints();
-                    this.curveView.curve.points = points;
-                    if (points.length !== 0) {
-                        $('#node-inputer-points-container').editableList('sort');
+                    if (points.length > 0) {
+                        // Only sort when data are valid.
+                        $('#node-input-points-container').editableList('sort', nodered_sort);
                     }
                 });
-                $('#node-inputer-points-container').editableList('sort');
+                $(row).on('change', e => {
+                    let points = parsePoints();
+                    this.curveView.curve.points = points;
+                });
             }
 
-            const nodered_sort = function(itemA, itemB){
-                try {
-                    return timeToSeconds(itemA.x) - timeToSeconds(itemB.x);
-                } catch (e) {
-                    return 0
-                }
-            }
 
-            const nodered_removeItem = function(point){
-                console.log('removed point: ', point);
-                const position = curve.getPositionOfPoint(point.uid);
-                if(position >= 0 ) curve.removePoint(position, false);
+            const nodered_removeItem = function(uuid){
+                curve.removePoint(uuid);
             }
 
             $('#node-input-points-container').editableList({
@@ -407,44 +510,39 @@
             });
 
             // Initialize JavaScript Objects
-            const curve_onAddPoint = function(index, point){
+            curve.onAddPoint = function(point){
                 $('#node-input-points-container').editableList('addItem', point);
             }
 
-            const curve_onMovePoint = function(index, point){
-                $(`#coord-input-x-${point.uid}`).val(secondsToTime(point.x));
-                $(`#coord-input-y-${point.uid}`).val(point.y.toFixed(0));
+            curve.onMovePoint = function(point){
+                $(`#coord-input-x-${point.uuid}`).val(secondsToTime(point.x));
+                $(`#coord-input-y-${point.uuid}`).val(point.y.toFixed(0));
             }
 
-            const curve_onRemovePoint = function(index, point){
+            curve.onRemovePoint = function(point){
                 $('#node-input-points-container').editableList('removeItem', point);
             }
 
-            config = {
-                points: [],
-                onAddPoint: curve_onAddPoint,
-                onMovePoint: curve_onMovePoint,
-                onRemovePoint: curve_onRemovePoint
-            };
-
-            for(let i=0; i<this.points.length; i++) {
-                const point_raw = this.points[i];
-                config.points.push({x: parseFloat(point_raw.x), y: parseFloat(point_raw.y)});
+            for (let i=0; i<this.points.length; i++) {
+                curve.addPoint(this.points[i]);
             }
 
-            $("#node-input-input_key").typedInput({default:'msg',types:['msg']});
-            $("#node-input-output_key").typedInput({default:'msg',types:['msg']});
-            const canvas = document.getElementById('curve-canvas');
-            const container = canvas.parentElement;
-
-            const curve = new Curve(config);
-            this.curveView = new CurveView(canvas, container, curve);
+            $("#node-input-input_property").typedInput({
+                default:'msg',
+                types:['msg']
+            });
+            $("#node-input-output_property").typedInput({
+                default:'msg',
+                types:['msg']
+            });
         },
         oneditresize: function(size) {
             this.curveView.updateSize();
         },
         oneditsave: function(){
             this.points = parsePoints();
+            // this.input_key = $("#node-input-input_prop").value();
+            // this.output_key = $("#node-input-output_key").value();
         }
     });
 </script>
@@ -455,20 +553,37 @@
         <input id="node-input-name" style="width: 70%" type="text" placeholder="time-curve">
     </div>
     <div class="form-row">
-        <label for="node-input-input_key"><i class="fa fa-ellipsis-h"></i> Input</label>
-        <input id="node-input-input_key" style="width: 70%" type="text" placeholder="payload">
+        <label for="node-input-input_property"><i class="fa fa-ellipsis-h"></i> Input</label>
+        <input id="node-input-input_property" style="width: 70%" type="text">
     </div>
     <div class="form-row">
-        <label for="node-input-output_key"><i class="fa fa-ellipsis-h"></i> Output</label>
-        <input id="node-input-output_key" style="width: 70%" type="text" placeholder="payload">
+        <label for="node-input-output_property"><i class="fa fa-ellipsis-h"></i> Output</label>
+        <input id="node-input-output_property" style="width: 70%" type="text">
     </div>
     <canvas id="curve-canvas" style="display:block;"></canvas>
-    <div class="form-row node-input-points-container-row">
+    <span style="color:#999;">Click to add, drag to move, right click to delete.</span>
+    <div class="form-row node-input-points-container-row" style="padding-top:0.5em;">
         <ol id="node-input-points-container"></ol>
     </div>
 </script>
 
-<script type="text/x-red" data-help-name="time-curve">
-    <p>A simple node</p>
+<script type="text/markdown" data-help-name="time-curve">
+Takes a timestamp input and outputs a value based on the time of day.
+
+### Inputs
+: payload (timestamp) :  timestamp, for determining the time of day.
+
+### Outputs
+: payload (float) :  value based on time of day, as determined by config.
+
+### Details
+This node takes a timestamp input and outputs a percentage (float in the range 0.0 to 100.0 inclusive) based on the time of day of the timestamp.
+
+This node functions as an analogue time clock, e.g. a time-based dimmer. I specifically designed it to program the brightness of aquarium lamps.
+
+### Configuration
+You can move points directly in the graph by clicking and dragging, add new points by clicking anywhere on the graph where one does not already exist, and delete points by right-clicking them.
+
+Values between points are interpolated linearly, i.e. connected by a straight line. The last and first point are connected so that there is no jump in values at midnight.
 
 </script>
