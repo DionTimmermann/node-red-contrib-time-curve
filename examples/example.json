@@ -1,1 +1,232 @@
-[{"id":"d4145baa.e47e98","type":"inject","z":"79f2d0a1.1d776","name":"Run Curve Debugger","topic":"","payload":"","payloadType":"date","repeat":"","crontab":"","once":false,"onceDelay":0.1,"x":200,"y":220,"wires":[["7badddae.8a7774"]]},{"id":"7badddae.8a7774","type":"function","z":"79f2d0a1.1d776","name":"Generate Test Domain (x-axis)","func":"msg.payload = \"0.0\";\nfor(var i = 0.1; i <= 1; i += 0.1){\n    msg.payload = msg.payload + \",\" + i.toFixed(2);\n}\nreturn msg;","outputs":1,"noerr":0,"x":450,"y":220,"wires":[["aac9400b.365a5"]]},{"id":"aac9400b.365a5","type":"split","z":"79f2d0a1.1d776","name":"","splt":",","spltType":"str","arraySplt":1,"arraySpltType":"len","stream":false,"addname":"","x":650,"y":220,"wires":[["7abc9158.360c4"]]},{"id":"7abc9158.360c4","type":"function","z":"79f2d0a1.1d776","name":"Generate Payload","func":"msg.payload = { lightData: { curveInput: msg.payload } };\nmsg.payload.continue = \"debug\";\nreturn msg;","outputs":1,"noerr":0,"x":810,"y":220,"wires":[["8e3040bc.fdc34"]]},{"id":"8e3040bc.fdc34","type":"spline-curve","z":"79f2d0a1.1d776","name":"Evening Curve","output_key":"payload.kelvin","input_key":"payload.lightData.curveInput","points":[{"x":0,"y":0.25},{"x":0.266,"y":0.253},{"x":0.496,"y":0.25},{"x":1,"y":0}],"x":1000,"y":220,"wires":[["85c45871.89f378"]]},{"id":"85c45871.89f378","type":"debug","z":"79f2d0a1.1d776","name":"","active":true,"tosidebar":true,"console":false,"tostatus":false,"complete":"payload.kelvin","targetType":"msg","x":1190,"y":220,"wires":[]}]
+[
+  {
+    "id": "77f6f2a83ccb6ea8",
+    "type": "tab",
+    "label": "Aquarium",
+    "disabled": false,
+    "info": "",
+    "env": []
+  },
+  {
+    "id": "a002e73b4dad6cce",
+    "type": "inject",
+    "z": "77f6f2a83ccb6ea8",
+    "name": "",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 190,
+    "y": 120,
+    "wires": [
+      [
+        "0e076038f1375ad9",
+        "7e368fc16557c0d9"
+      ]
+    ]
+  },
+  {
+    "id": "0e076038f1375ad9",
+    "type": "time-curve",
+    "z": "77f6f2a83ccb6ea8",
+    "name": "living room - top light",
+    "output_property": "payload",
+    "input_property": "payload",
+    "points": [
+      {
+        "x": 21600,
+        "y": 0,
+        "uuid": "6763ef8b-051d-4525-9d06-1d38e3a9603b"
+      },
+      {
+        "x": 22200,
+        "y": 5,
+        "uuid": "e1e5ce21-a6da-489b-b3a2-b01255dcf109"
+      },
+      {
+        "x": 27000,
+        "y": 15,
+        "uuid": "070701a2-7f07-4f16-8862-cf6ce228f0c8"
+      },
+      {
+        "x": 50400,
+        "y": 15,
+        "uuid": "881ad2c9-5235-401b-8c34-b7302d54f3de"
+      },
+      {
+        "x": 54000,
+        "y": 70,
+        "uuid": "f7ccef64-07b7-48e4-aace-acddb3b8f0d8"
+      },
+      {
+        "x": 68400,
+        "y": 70,
+        "uuid": "2287e9ac-c5c6-4bc5-9157-4f11eb1a6f21"
+      },
+      {
+        "x": 72900,
+        "y": 20,
+        "uuid": "4aa9696d-e563-4dcc-9453-498d4a855a30"
+      },
+      {
+        "x": 78300,
+        "y": 5,
+        "uuid": "8ce3088a-379b-404d-94e6-94f3d6ff427c"
+      },
+      {
+        "x": 79200,
+        "y": 0,
+        "uuid": "e48c3695-32d3-4b53-8c80-984623b189dd"
+      }
+    ],
+    "x": 440,
+    "y": 80,
+    "wires": [
+      [
+        "831aa69c56eb2978"
+      ]
+    ]
+  },
+  {
+    "id": "831aa69c56eb2978",
+    "type": "api-call-service",
+    "z": "77f6f2a83ccb6ea8",
+    "name": "set brightness",
+    "server": "bbbcdf85.6f60d",
+    "version": 7,
+    "debugenabled": false,
+    "action": "light.turn_on",
+    "floorId": [],
+    "areaId": [],
+    "deviceId": [
+      "b40460ba1c48fa98f1b519d3fd47814d"
+    ],
+    "entityId": [],
+    "labelId": [],
+    "data": "{\"brightness_pct\": {{payload}}}",
+    "dataType": "json",
+    "mergeContext": "",
+    "mustacheAltTags": false,
+    "outputProperties": [],
+    "queue": "none",
+    "blockInputOverrides": false,
+    "domain": "light",
+    "service": "turn_on",
+    "x": 680,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "7e368fc16557c0d9",
+    "type": "time-curve",
+    "z": "77f6f2a83ccb6ea8",
+    "name": "living room - back light",
+    "output_property": "payload",
+    "input_property": "payload",
+    "points": [
+      {
+        "x": 21600,
+        "y": 0,
+        "uuid": "6763ef8b-051d-4525-9d06-1d38e3a9603b"
+      },
+      {
+        "x": 22200,
+        "y": 1,
+        "uuid": "e1e5ce21-a6da-489b-b3a2-b01255dcf109"
+      },
+      {
+        "x": 27000,
+        "y": 3,
+        "uuid": "070701a2-7f07-4f16-8862-cf6ce228f0c8"
+      },
+      {
+        "x": 50400,
+        "y": 3,
+        "uuid": "881ad2c9-5235-401b-8c34-b7302d54f3de"
+      },
+      {
+        "x": 54000,
+        "y": 10,
+        "uuid": "f7ccef64-07b7-48e4-aace-acddb3b8f0d8"
+      },
+      {
+        "x": 68400,
+        "y": 10,
+        "uuid": "2287e9ac-c5c6-4bc5-9157-4f11eb1a6f21"
+      },
+      {
+        "x": 72900,
+        "y": 20,
+        "uuid": "4aa9696d-e563-4dcc-9453-498d4a855a30"
+      },
+      {
+        "x": 78300,
+        "y": 3,
+        "uuid": "8ce3088a-379b-404d-94e6-94f3d6ff427c"
+      },
+      {
+        "x": 79200,
+        "y": 0,
+        "uuid": "e48c3695-32d3-4b53-8c80-984623b189dd"
+      }
+    ],
+    "x": 440,
+    "y": 160,
+    "wires": [
+      [
+        "72bd7c997deeaaea"
+      ]
+    ]
+  },
+  {
+    "id": "72bd7c997deeaaea",
+    "type": "api-call-service",
+    "z": "77f6f2a83ccb6ea8",
+    "name": "set brightness",
+    "server": "bbbcdf85.6f60d",
+    "version": 7,
+    "debugenabled": false,
+    "action": "light.turn_on",
+    "floorId": [],
+    "areaId": [],
+    "deviceId": [
+      "2ab29095fdbad8f80a99d40c10b9669d"
+    ],
+    "entityId": [],
+    "labelId": [],
+    "data": "{\"brightness_pct\": {{payload}}}",
+    "dataType": "json",
+    "mergeContext": "",
+    "mustacheAltTags": false,
+    "outputProperties": [],
+    "queue": "none",
+    "blockInputOverrides": true,
+    "domain": "light",
+    "service": "turn_on",
+    "x": 680,
+    "y": 160,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "bbbcdf85.6f60d",
+    "type": "server",
+    "name": "Home Assistant",
+    "addon": true
+  }
+]
